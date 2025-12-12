@@ -1,62 +1,86 @@
-
-import { GoogleGenAI, GenerateContentResponse, Part } from '@google/genai';
+import { GoogleGenAI } from "@google/genai";
 
 const getGeminiClient = () => {
+  // Assuming process.env.API_KEY is available as per guidelines
   if (!process.env.API_KEY) {
-    throw new Error('API_KEY environment variable is not set.');
+    console.warn("API Key is missing. Gemini features will not work.");
+    return null;
   }
   return new GoogleGenAI({ apiKey: process.env.API_KEY });
 };
 
-/**
- * Generates an image based on a text prompt using the Gemini API.
- * @param prompt The text prompt for image generation.
- * @returns A base64 data URL of the generated image.
- */
-export async function generateImage(prompt: string): Promise<string> {
-  const ai = getGeminiClient();
+export const analyzeFileWithGemini = async (
+  base64Data: string,
+  mimeType: string,
+  prompt: string = "Analyze this file and provide a short, helpful summary or description."
+): Promise<string> => {
+  const client = getGeminiClient();
+  if (!client) return "API Key missing.";
+
   try {
-    const response: GenerateContentResponse = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image', // Using the specified model for image generation
+    // Extract base64 string without the data:image/...;base64, prefix if present
+    const base64Content = base64Data.includes('base64,') 
+      ? base64Data.split('base64,')[1] 
+      : base64Data;
+
+    const modelId = mimeType.startsWith('image/') ? 'gemini-2.5-flash' : 'gemini-2.5-flash';
+
+    const response = await client.models.generateContent({
+      model: modelId,
       contents: {
         parts: [
-          {
-            text: prompt,
-          },
-        ],
-      },
-      config: {
-        imageConfig: {
-          aspectRatio: "1:1", // Default to 1:1 aspect ratio. This is supported.
-          // imageSize is only supported for 'gemini-3-pro-image-preview',
-          // so it's removed to resolve the "image_size is only supported for Gempix 2 recipe" error.
-        },
-      },
+            {
+                inlineData: {
+                    mimeType: mimeType,
+                    data: base64Content
+                }
+            },
+            {
+                text: prompt
+            }
+        ]
+      }
     });
 
-    if (response.candidates && response.candidates.length > 0) {
-      // Fix: Iterate through all parts to find the image part, as per guidelines.
-      // Do not assume the first part is an image part.
-      for (const candidate of response.candidates) {
-        for (const part of candidate.content?.parts || []) {
-          // Fix: `mimeType` can be optional in `inlineData` from the `@google/genai` SDK's `Blob_2` type.
-          // Provide a fallback 'image/png' if `mimeType` is undefined.
-          if (part.inlineData && part.inlineData.data) {
-            const base64EncodeString: string = part.inlineData.data;
-            const mimeType = part.inlineData.mimeType || 'image/png'; // Fallback to 'image/png'
-            return `data:${mimeType};base64,${base64EncodeString}`;
-          }
-        }
-      }
-      throw new Error('No image data found in the response.');
-    } else {
-      throw new Error('No candidates found in the Gemini API response.');
-    }
+    return response.text || "No analysis generated.";
   } catch (error) {
-    console.error('Error generating image from Gemini API:', error);
-    if (error instanceof Error) {
-      throw new Error(`Failed to generate image: ${error.message}`);
-    }
-    throw new Error('An unknown error occurred during image generation.');
+    console.error("Gemini analysis failed:", error);
+    return "Failed to analyze file with Gemini.";
   }
-}
+};
+
+export const generateFileName = async (
+    base64Data: string,
+    mimeType: string
+): Promise<string> => {
+    const client = getGeminiClient();
+    if (!client) return "";
+  
+    try {
+      const base64Content = base64Data.includes('base64,') 
+        ? base64Data.split('base64,')[1] 
+        : base64Data;
+  
+      const response = await client.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: {
+          parts: [
+              {
+                  inlineData: {
+                      mimeType: mimeType,
+                      data: base64Content
+                  }
+              },
+              {
+                  text: "Generate a short, concise, and descriptive filename for this content. Do not include the file extension. Max 5 words."
+              }
+          ]
+        }
+      });
+  
+      return response.text.trim();
+    } catch (error) {
+      console.error("Gemini filename generation failed:", error);
+      return "";
+    }
+  };
