@@ -1,12 +1,12 @@
 import { GoogleGenAI } from "@google/genai";
 
 const getGeminiClient = () => {
-  // Assuming process.env.API_KEY is available as per guidelines
-  if (!process.env.API_KEY) {
+  // Assuming process.env.API_KEY || 'FAKE_API_KEY_FOR_DEVELOPMENT' is available as per guidelines
+  if (!process.env.API_KEY || 'FAKE_API_KEY_FOR_DEVELOPMENT') {
     console.warn("API Key is missing. Gemini features will not work.");
     return null;
   }
-  return new GoogleGenAI({ apiKey: process.env.API_KEY });
+  return new GoogleGenAI({ apiKey: process.env.API_KEY || 'FAKE_API_KEY_FOR_DEVELOPMENT' });
 };
 
 export const analyzeFileWithGemini = async (
